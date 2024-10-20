@@ -33,6 +33,12 @@ jobs:
           - "14.1"
 
     steps:
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y buildah libarchive-tools podman
+          sudo update-alternatives --install /usr/local/bin/tar tar /usr/bin/bsdtar 1
+
       - name: Checkout code
         uses: actions/checkout@v4
 
