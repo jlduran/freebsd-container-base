@@ -7,12 +7,12 @@ on:
 
   workflow_dispatch:
     inputs:
-      ARCH:
-        description: "Which architecture (amd64 or arm64) do you want to build? (Default: amd64)"
+      CPU:
+        description: "Which machine type (amd64 or arm64) do you want to build? (Default: amd64)"
         type: choice
         options:
-        - amd64
-        - arm64
+          - amd64
+          - arm64
         default: amd64
         required: true
       LATEST:
@@ -23,7 +23,7 @@ on:
 
 jobs:
   build:
-    name: FreeBSD-${{ matrix.freebsd_version }}-${{ github.event.inputs.ARCH || github.event.client_payload.arch }}
+    name: FreeBSD-${{ matrix.freebsd_version }}-${{ github.event.inputs.CPU || github.event.client_payload.cpu }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -45,34 +45,34 @@ jobs:
       - name: Store parameters in environmental variables
         run: |
           echo "FREEBSD_VERSION=${{ matrix.freebsd_version }}" >> $GITHUB_ENV
-          echo "ARCH=${{ github.event.inputs.ARCH || github.event.client_payload.arch }}" >> $GITHUB_ENV
+          echo "CPU=${{ github.event.inputs.CPU || github.event.client_payload.cpu }}" >> $GITHUB_ENV
           echo "LATEST=${{ github.event.inputs.LATEST || github.event.client_payload.latest }}" >> $GITHUB_ENV
 
       - name: Show parameters
         run: |
           echo $FREEBSD_VERSION
-          echo $ARCH
+          echo $CPU
           echo $LATEST
 
       # XXX Use BSD tar
       - name: Build image
         run: |
-          sudo sh ./build.sh --arch=${{ env.ARCH }} --freebsd_version=${{ env.FREEBSD_VERSION }} --latest_tag=${{ env.LATEST }}
+          sudo sh ./build.sh --cpu=${{ env.CPU }} --freebsd_version=${{ env.FREEBSD_VERSION }} --latest_tag=${{ env.LATEST }}
 
       - name: Check image
         run: |
           podman images
 
-          # XXX Settle on versioning
-          if [[ "${{ env.FREEBSD_VERSION }}" != "15.0" ]]; then
-            FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }} # XXX -RELEASE
-          else
-            FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }} # XXX -CURRENT
-          fi
-          if [[ "${{ env.ARCH }}" != "amd64" ]]; then
-            ARCH_SUFFIX=-${{ env.ARCH }}
-          fi
-          podman run ghcr.io/${{ github.repository_owner }}/freebsd:${FREEBSD_VERSION_WITH_SUFFIX}${ARCH_SUFFIX} uname -a
+      #     # XXX Settle on versioning
+      #     if [[ "${{ env.FREEBSD_VERSION }}" != "15.0" ]]; then
+      #       FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }}-RELEASE
+      #     else
+      #       FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }}-CURRENT
+      #     fi
+      #     if [[ "${{ env.CPU }}" != "amd64" ]]; then
+      #       CPU_SUFFIX=-${{ env.CPU }}
+      #     fi
+      #     podman run ghcr.io/${{ github.repository_owner }}/freebsd:${FREEBSD_VERSION_WITH_SUFFIX}${CPU_SUFFIX} uname -a
 
       # - name: Login to ghcr.io
       #   uses: docker/login-action@v3
