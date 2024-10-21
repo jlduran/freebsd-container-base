@@ -187,12 +187,11 @@ buildah config \
 	--os freebsd \
 	"$oci_container_id"
 # XXX current version does not support:
-# --identity-label=false --omit-history=true
+# --identity-label=false --omit-history=true --rm
 buildah commit \
-	--rm \
-	"$oci_container_id" "localhost/freebsd-${cpu}:${version%-*}" # XXX --sign-by
+	"$oci_container_id" "ghcr.io/jlduran/freebsd-${cpu}:${version%-*}" # XXX --sign-by
 if [ "$latest" -eq 1 ]; then
-	buildah tag "localhost/freebsd-${cpu}:${version%-*}" "localhost/freebsd-${cpu}:latest"
+	buildah tag "ghcr.io/jlduran/freebsd-${cpu}:${version%-*}" "ghcr.io/jlduran/freebsd-${cpu}:latest"
 fi
 # XXX add a registry option
 
