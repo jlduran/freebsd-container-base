@@ -64,7 +64,18 @@ get_arch()
 	case "$1" in
 		amd64) echo amd64 ;;
 		arm64) echo aarch64 ;;
-		*) err "Machine type $(uname -m) not supported" ;;
+		*) err "Machine type ${1} not supported" ;;
+	esac
+}
+
+# Get the full FreeBSD version
+# $1: short version
+get_full_version()
+{
+	case "$1" in
+		15.0) echo 15.0-CURRENT ;;
+		14.1) echo 14.1-RELEASE ;;
+		*) err "Version ${1} not supported" ;;
 	esac
 }
 
@@ -102,19 +113,21 @@ prune_base()
 usage() {
 	printf 'Build FreeBSD container images from base\n\n'
 	printf 'Usage:\n'
-	printf '  %s [-hl] [-c cpu] [-f version]\n\n' "$0"
+	printf '  %s [-hl] [-c cpu] [-f version] [-r registry]\n\n' "$0"
 	printf 'Options:\n'
 	printf '  -c cpu        CPU type: amd64 or arm64\n'
 	printf '                (Default: amd64)\n'
-	printf '  -f version    FreeBSD version: 15.0-CURRENT, 14.1-RELEASE\n'
-	printf '                (Default: 15.0-CURRENT)\n'
+	printf '  -f version    FreeBSD version: 15.0, 14.1\n'
+	printf '                (Default: 15.0)\n'
 	printf '  -h            Help: display this usage message\n'
 	printf '  -l            Tag the image as latest\n'
+	printf '  -r registry   Registry path: terminated with /\n'
+	printf '                (Default: none)\n'
 	exit 1
 }
 
 # Get options
-while getopts "c:f:hl" opt; do
+while getopts "c:f:hlr:" opt; do
 	case "$opt" in
 		c)
 			cpu=${OPTARG}
@@ -124,6 +137,9 @@ while getopts "c:f:hl" opt; do
 			;;
 		l)
 			latest=1
+			;;
+		r)
+			registry=${OPTARG}
 			;;
 		h|?)
 			usage
@@ -139,12 +155,11 @@ if [ -z "$cpu" ]; then
 	cpu="amd64" # TODO arm64
 fi
 if [ -z "$version" ]; then
-	version="15.0-CURRENT"
+	version="15.0"
 fi
 if [ -z "$latest" ]; then
 	latest=0
 fi
-
 
 # Error checking
 if [ "$cpu" != "amd64" ] && [ "$cpu" != "arm64" ]; then
@@ -156,7 +171,8 @@ fi
 tmp_dir=$(mktemp -d /tmp/base.XXXXXXX)
 check_downloader
 arch="$(get_arch "$cpu")"
-$DOWNLOAD "https://download.freebsd.org/snapshots/${cpu}/${arch}/${version}/base.txz" > "${tmp_dir}/base.txz"
+full_version="$(get_full_version "$version")"
+$DOWNLOAD "https://download.freebsd.org/snapshots/${cpu}/${arch}/${full_version}/base.txz" > "${tmp_dir}/base.txz"
 
 # Build the container from scratch
 oci_container_id=$(buildah from scratch)
@@ -171,6 +187,7 @@ if [ -z "$base_root" ]; then
 fi
 
 # Untar base to the mounted container
+# XXX can we --exclude the prune_base list?
 tar -xvf "${tmp_dir}/base.txz" -C "$base_root"
 
 # Prepare the container
@@ -181,19 +198,21 @@ prune_base "$base_root"
 buildah unmount "$oci_container_id" # XXX Trap cleanup
 buildah config \
 	--annotation "org.opencontainers.image.ref.name=freebsd" \
-	--annotation "org.opencontainers.image.version=${version%-*}" \
+	--annotation "org.opencontainers.image.version=${version}" \
 	--arch "$cpu" \
 	--cmd "/bin/sh" \
 	--os freebsd \
 	"$oci_container_id"
-# XXX current version does not support:
-# --identity-label=false --omit-history=true --rm
+# XXX current GH Actions Runner buildah version does not support:
+# --identity-label=false --omit-history=true
+# XXX Add --sign-by
 buildah commit \
-	"$oci_container_id" "ghcr.io/jlduran/freebsd-${cpu}:${version%-*}" # XXX --sign-by
+	--rm \
+	"$oci_container_id" "${registry}freebsd-${cpu}:${version}"
+# XXX Also tag with a more FreeBSD-esque name? 15.0-CURRENT, 14.1-RELEASE?
 if [ "$latest" -eq 1 ]; then
-	buildah tag "ghcr.io/jlduran/freebsd-${cpu}:${version%-*}" "ghcr.io/jlduran/freebsd-${cpu}:latest"
+	buildah tag "${registry}freebsd-${cpu}:${version}" "${registry}freebsd-${cpu}:latest"
 fi
-# XXX add a registry option
 
 # Cleanup
 rm -fr "$tmp_dir"

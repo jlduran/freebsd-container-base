@@ -7,35 +7,30 @@ on:
 
   workflow_dispatch:
     inputs:
-      CPU:
-        description: "Which machine type (amd64 or arm64) do you want to build? (Default: amd64)"
-        type: choice
-        options:
-          - amd64
-          - arm64
-        default: amd64
-        required: true
       FREEBSD_VERSION:
-        description: "The version of FreeBSD to be built (Default: 15.0-CURRENT)"
+        description: "The version of FreeBSD to be built (Default: 15.0)"
         type: choice
         options:
-          - 15.0-CURRENT
-          - 14.1-RELEASE
-        default: amd64
+          - "15.0"
+          - "14.1"
+        default: "15.0"
         required: true
       LATEST:
         description: "Whether the 'latest' tag should be created"
         type: boolean
-        default: false
-        required: true
+        default: true
+        required: false
 
 jobs:
   build:
-    name: FreeBSD-${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}-${{ github.event.inputs.CPU || github.event.client_payload.cpu }}
+    name: FreeBSD-${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}-${{ matrix.cpu }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-
+      matrix:
+        cpu:
+        - amd64
+        - arm64
     steps:
       - name: Install prerequisites
         run: |
@@ -49,35 +44,27 @@ jobs:
       - name: Store parameters in environmental variables
         run: |
           echo "FREEBSD_VERSION=${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}" >> $GITHUB_ENV
-          echo "CPU=${{ github.event.inputs.CPU || github.event.client_payload.cpu }}" >> $GITHUB_ENV
+          echo "CPU=${{ matrix.cpu }}" >> $GITHUB_ENV
           echo "LATEST=${{ github.event.inputs.LATEST || github.event.client_payload.latest }}" >> $GITHUB_ENV
+          echo "REGISTRY_PATH=ghcr.io/${{ github.repository_owner }}/" >> $GITHUB_ENV
 
-      - name: Show parameters
-        run: |
-          echo $FREEBSD_VERSION
-          echo $CPU
-          echo $LATEST
-
-      # XXX Use BSD tar
       - name: Build image
         run: |
-          sudo sh ./build.sh -c ${{ env.CPU }} -f ${{ env.FREEBSD_VERSION }} ${{ env.LATEST == true && '-l' }}
+          sudo sh ./build.sh -c ${{ env.CPU }} -f ${{ env.FREEBSD_VERSION }}${{ env.LATEST == true && ' -l' || '' }} -r ${{ env.REGISTRY_PATH }}
 
       - name: Check image
         run: |
-          sudo buildah images
+          sudo podman images
+          # XXX Uncomment on runners with a FreeBSD kernel
+          # sudo podman run ${{ env.REGISTRY_PATH }}freebsd-${{ env.CPU }}:${{ env.FREEBSD_VERSION }} uname -a
 
-      #     # XXX Settle on versioning
-      #     if [[ "${{ env.FREEBSD_VERSION }}" != "15.0" ]]; then
-      #       FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }}-RELEASE
-      #     else
-      #       FREEBSD_VERSION_WITH_SUFFIX=${{ env.FREEBSD_VERSION }}-CURRENT
-      #     fi
-      #     if [[ "${{ env.CPU }}" != "amd64" ]]; then
-      #       CPU_SUFFIX=-${{ env.CPU }}
-      #     fi
-      #     podman run ghcr.io/${{ github.repository_owner }}/freebsd:${FREEBSD_VERSION_WITH_SUFFIX}${CPU_SUFFIX} uname -a
-
+  build_manifest:
+    name: FreeBSD-${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
       - name: Login to ghcr.io
         uses: docker/login-action@v3
         with:
@@ -85,5 +72,32 @@ jobs:
           username: ${{ secrets.REGISTRY_SECRET }}
           password: ${{ secrets.REGISTRY_SECRET }}
 
+      - name: Store parameters in environmental variables
+        run: |
+          echo "FREEBSD_VERSION=${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}" >> $GITHUB_ENV
+          # XXX missing ${{ env.LATEST == true && 'latest' || '' }}
+          # echo "LATEST=${{ github.event.inputs.LATEST || github.event.client_payload.latest }}" >> $GITHUB_ENV
+          echo "REGISTRY_PATH=ghcr.io/${{ github.repository_owner }}/" >> $GITHUB_ENV
+
+      - name: Build manifest
+        run: |
+          sudo buildah manifest create ${{ env.REGISTRY_PATH }}freebsd:${{ env.FREEBSD_VERSION }} \
+          ${{ env.REGISTRY_PATH }}freebsd-amd64:${{ env.FREEBSD_VERSION }} \
+          ${{ env.REGISTRY_PATH }}freebsd-arm64:${{ env.FREEBSD_VERSION }}
+
+  push:
+    name: Publish FreeBSD-${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}
+    needs: build_manifest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Store parameters in environmental variables
+        run: |
+          echo "FREEBSD_VERSION=${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}" >> $GITHUB_ENV
+          # XXX missing ${{ env.LATEST == true && 'latest' || '' }}
+          # echo "LATEST=${{ github.event.inputs.LATEST || github.event.client_payload.latest }}" >> $GITHUB_ENV
+          echo "REGISTRY_PATH=ghcr.io/${{ github.repository_owner }}/" >> $GITHUB_ENV
+
       - name: Push images to ghcr.io
-        run: sudo buildah push ghcr.io/${{ github.repository_owner }}/freebsd-${{ env.CPU }}:15.0 # ${{ env.FREEBSD_VERSION }}
+        run: sudo buildah manifest push ${{ env.REGISTRY_PATH }}freebsd:${{ env.FREEBSD_VERSION }}
