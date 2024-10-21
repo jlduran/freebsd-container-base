@@ -15,6 +15,14 @@ on:
           - arm64
         default: amd64
         required: true
+      FREEBSD_VERSION:
+        description: The version of FreeBSD to be built
+        type: choice
+        options:
+          - 15.0-CURRENT
+          - 14.1-RELEASE
+        default: amd64
+        required: true
       LATEST:
         description: "Whether the 'latest' tag should be created (Default: false)"
         type: boolean
@@ -23,20 +31,16 @@ on:
 
 jobs:
   build:
-    name: FreeBSD-${{ matrix.freebsd_version }}-${{ github.event.inputs.CPU || github.event.client_payload.cpu }}
+    name: FreeBSD-${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}-${{ github.event.inputs.CPU || github.event.client_payload.cpu }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        freebsd_version:
-          - "15.0"
-          - "14.1"
 
     steps:
       - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y buildah libarchive-tools podman
+          sudo apt-get install --no-install-recommends -y libarchive-tools
           sudo update-alternatives --install /usr/local/bin/tar tar /usr/bin/bsdtar 1
 
       - name: Checkout code
@@ -44,7 +48,7 @@ jobs:
 
       - name: Store parameters in environmental variables
         run: |
-          echo "FREEBSD_VERSION=${{ matrix.freebsd_version }}" >> $GITHUB_ENV
+          echo "FREEBSD_VERSION=${{ github.event.inputs.FREEBSD_VERSION || github.event.client_payload.freebsd_version }}" >> $GITHUB_ENV
           echo "CPU=${{ github.event.inputs.CPU || github.event.client_payload.cpu }}" >> $GITHUB_ENV
           echo "LATEST=${{ github.event.inputs.LATEST || github.event.client_payload.latest }}" >> $GITHUB_ENV
 
@@ -57,7 +61,7 @@ jobs:
       # XXX Use BSD tar
       - name: Build image
         run: |
-          sudo sh ./build.sh --cpu=${{ env.CPU }} --freebsd_version=${{ env.FREEBSD_VERSION }} --latest_tag=${{ env.LATEST }}
+          sudo sh ./build.sh -c ${{ env.CPU }} -f ${{ env.FREEBSD_VERSION }} ${{ env.LATEST == true && '-l' }}
 
       - name: Check image
         run: |

@@ -1,8 +1,8 @@
 #!/bin/sh
-set -ex
 
-# TODO
-# - parse args
+# SPDX-License-Identifier: MIT
+
+# build.sh: Build FreeBSD container images from base
 
 # Use curl, fetch or wget to DOWNLOAD
 CURL="curl -s"      # macOS
@@ -20,13 +20,12 @@ err() {
 check_prerequisites()
 {
 	buildah --version > /dev/null || err "Please install buildah."
-	podman --version > /dev/null || err "Please install podman."
 	tar --version | grep bsdtar > /dev/null || err "Please install BSD tar."
 }
 
-# Download invocation
-# $1: command
-download_invocation()
+# Set the downloader command
+# $1: downloader
+set_downloader()
 {
 	case "$1" in
 		"curl")
@@ -48,7 +47,7 @@ check_downloader()
 	for _cmd in curl fetch wget; do
 		if [ -x "/usr/bin/${_cmd}" ] || \
 		    [ -x "/usr/local/bin/${_cmd}" ]; then
-			download_invocation $_cmd
+			set_downloader $_cmd
 			break
 		fi
 	done
@@ -99,13 +98,64 @@ prune_base()
 	rm -rf "${base_root:?}/var/yp/*"
 }
 
+# Usage instructions
+usage() {
+	printf 'Build FreeBSD container images from base\n\n'
+	printf 'Usage:\n'
+	printf '  %s [-hl] [-c cpu] [-f version]\n\n' "$0"
+	printf 'Options:\n'
+	printf '  -c cpu        CPU type: amd64 or arm64\n'
+	printf '                (Default: amd64)\n'
+	printf '  -f version    FreeBSD version: 15.0-CURRENT, 14.1-RELEASE\n'
+	printf '                (Default: 15.0-CURRENT)\n'
+	printf '  -h            Help: display this usage message\n'
+	printf '  -l            Tag the image as latest\n'
+	exit 1
+}
+
+# Get options
+while getopts "c:f:hl" opt; do
+	case "$opt" in
+		c)
+			cpu=${OPTARG}
+			;;
+		f)
+			version=${OPTARG}
+			;;
+		l)
+			latest=1
+			;;
+		h|?)
+			usage
+			;;
+	esac
+done
+
+# Debug output
+set -ex
+
+# Defaults
+if [ -z "$cpu" ]; then
+	cpu="amd64" # TODO arm64
+fi
+if [ -z "$version" ]; then
+	version="15.0-CURRENT"
+fi
+if [ -z "$latest" ]; then
+	latest=0
+fi
+
+
+# Error checking
+if [ "$cpu" != "amd64" ] && [ "$cpu" != "arm64" ]; then
+	err "Invalid CPU type"
+fi
+
 # Download FreeBSD base
 # XXX multi-arch
 tmp_dir=$(mktemp -d /tmp/base.XXXXXXX)
 check_downloader
-cpu="arm64"
-arch="$(get_arch $cpu)"
-version="15.0-CURRENT"
+arch="$(get_arch "$cpu")"
 $DOWNLOAD "https://download.freebsd.org/snapshots/${cpu}/${arch}/${version}/base.txz" > "${tmp_dir}/base.txz"
 
 # Build the container from scratch
@@ -128,8 +178,23 @@ cp -p "${base_root}/etc/termcap.small" "${base_root}/usr/share/misc/termcap"
 prune_base "$base_root"
 
 # Unmount and commit the container
-buildah unmount "$oci_container_id"
-buildah commit --rm "$oci_container_id" freebsd:${version}
+buildah unmount "$oci_container_id" # XXX Trap cleanup
+buildah config \
+	--annotation "org.opencontainers.image.ref.name=freebsd" \
+	--annotation "org.opencontainers.image.version=${version%-*}" \
+	--arch "$cpu" \
+	--cmd "/bin/sh" \
+	--os freebsd \
+	"$oci_container_id"
+# XXX current version does not support:
+# --identity-label=false --omit-history=true
+buildah commit \
+	--rm \
+	"$oci_container_id" "localhost/freebsd-${cpu}:${version%-*}" # XXX --sign-by
+if [ "$latest" -eq 1 ]; then
+	buildah tag "localhost/freebsd-${cpu}:${version%-*}" "localhost/freebsd-${cpu}:latest"
+fi
+# XXX add a registry option
 
 # Cleanup
 rm -fr "$tmp_dir"
