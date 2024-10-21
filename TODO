@@ -1,3 +1,4 @@
-- remove cpu dropdown and use a matrix
 - bundle with a manifest both arches
 - accept a registry in the build script
+- rely more on rh-actions
+- use attestation
