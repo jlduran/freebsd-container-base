@@ -79,6 +79,17 @@ get_full_version()
 	esac
 }
 
+# Get the base URL for downloading the tar file
+# $1: short version
+get_base_url()
+{
+	case "$1" in
+		15.0) echo snapshots ;;
+		14.1) echo releases ;;
+		*) err "Version ${1} not supported" ;;
+	esac
+}
+
 # XXX Remove stuff we don't need
 # $1: base root directory
 prune_base()
@@ -172,7 +183,8 @@ tmp_dir=$(mktemp -d /tmp/base.XXXXXXX)
 check_downloader
 arch="$(get_arch "$cpu")"
 full_version="$(get_full_version "$version")"
-$DOWNLOAD "https://download.freebsd.org/snapshots/${cpu}/${arch}/${full_version}/base.txz" > "${tmp_dir}/base.txz"
+base_url=$(get_base_url "$version")
+$DOWNLOAD "https://download.freebsd.org/${base_url}/${cpu}/${arch}/${full_version}/base.txz" > "${tmp_dir}/base.txz"
 
 # Build the container from scratch
 oci_container_id=$(buildah from scratch)
