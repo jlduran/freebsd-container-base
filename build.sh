@@ -57,7 +57,7 @@ check_downloader()
 	fi
 }
 
-# Get the appropriate architechture name
+# Get the appropriate architecture name
 # $1: machine type
 get_arch()
 {
@@ -74,7 +74,7 @@ get_full_version()
 {
 	case "$1" in
 		15.0) echo 15.0-CURRENT ;;
-		14.2) echo 14.2-RELEASE ;;
+		14.3) echo 14.3-RELEASE ;;
 		*) err "Version ${1} not supported" ;;
 	esac
 }
@@ -85,7 +85,7 @@ get_base_url()
 {
 	case "$1" in
 		15.0) echo snapshots ;;
-		14.2) echo releases ;;
+		14.3) echo releases ;;
 		*) err "Version ${1} not supported" ;;
 	esac
 }
@@ -128,7 +128,7 @@ usage() {
 	printf 'Options:\n'
 	printf '  -c cpu        CPU type: amd64 or arm64\n'
 	printf '                (Default: amd64)\n'
-	printf '  -f version    FreeBSD version: 15.0, 14.2\n'
+	printf '  -f version    FreeBSD version: 15.0, 14.3\n'
 	printf '                (Default: 15.0)\n'
 	printf '  -h            Help: display this usage message\n'
 	printf '  -l            Tag the image as latest\n'
@@ -221,7 +221,7 @@ buildah config \
 buildah commit \
 	--rm \
 	"$oci_container_id" "${registry}freebsd-${cpu}:${version}"
-# XXX Also tag with a more FreeBSD-esque name? 15.0-CURRENT, 14.2-RELEASE?
+# XXX Also tag with a more FreeBSD-esque name? 15.0-CURRENT, 14.3-RELEASE?
 if [ "$latest" -eq 1 ]; then
 	buildah tag "${registry}freebsd-${cpu}:${version}" "${registry}freebsd-${cpu}:latest"
 fi
